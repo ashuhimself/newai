@@ -1,0 +1,1 @@
+{"schema":{"life":"bool","humidity":{"type":"integer","lookup":null,"range":true,"is_principal":null},"color":"keyword"}}

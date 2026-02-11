@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse DB Schema Analysis</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3a;
+    --text: #e0e0e8;
+    --text-dim: #8888a0;
+    --accent: #6c5ce7;
+    --accent2: #00cec9;
+    --warn: #fdcb6e;
+    --danger: #e17055;
+    --success: #00b894;
+    --blue: #74b9ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 32px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle { color: var(--text-dim); margin-bottom: 32px; font-size: 14px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--accent); }
+
+  .card-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent2);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 16px;
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { color: var(--text-dim); font-size: 14px; }
+  .stat-value { font-weight: 700; font-size: 16px; }
+
+  .full-width { grid-column: 1 / -1; }
+
+  .cluster-header {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 32px 0 16px;
+    padding-left: 12px;
+    border-left: 3px solid var(--accent);
+  }
+
+  .table-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .table-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(108, 92, 231, 0.15);
+  }
+
+  .table-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+
+  .table-purpose {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  .table-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  .badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .badge-pk { background: rgba(108, 92, 231, 0.2); color: var(--accent); }
+  .badge-fk { background: rgba(0, 206, 201, 0.2); color: var(--accent2); }
+  .badge-rows { background: rgba(253, 203, 110, 0.2); color: var(--warn); }
+  .badge-status { background: rgba(0, 184, 148, 0.2); color: var(--success); }
+
+  .relationship-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .relationship-table th {
+    text-align: left;
+    padding: 10px 12px;
+    background: var(--surface2);
+    color: var(--accent2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .relationship-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+  }
+  .relationship-table tr:hover td {
+    background: rgba(108, 92, 231, 0.05);
+  }
+
+  .fk-arrow { color: var(--accent2); }
+  .cascade { color: var(--success); font-size: 10px; }
+  .set-null { color: var(--warn); font-size: 10px; }
+
+  .issue-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    border-left: 3px solid var(--danger);
+  }
+  .issue-title {
+    font-weight: 700;
+    font-size: 14px;
+    margin-bottom: 6px;
+    color: var(--danger);
+  }
+  .issue-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+
+  .flow-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    overflow-x: auto;
+  }
+
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    min-width: max-content;
+    padding: 16px 0;
+  }
+
+  .flow-node {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    text-align: center;
+    min-width: 140px;
+    flex-shrink: 0;
+  }
+  .flow-node-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .flow-node-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .flow-arrow {
+    color: var(--accent2);
+    font-size: 20px;
+    padding: 0 8px;
+    flex-shrink: 0;
+  }
+
+  .section-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin: 40px 0 12px;
+    color: var(--text);
+  }
+  .section-desc {
+    color: var(--text-dim);
+    font-size: 14px;
+    margin-bottom: 20px;
+    line-height: 1.6;
+  }
+
+  .issues-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Pulse DB — Schema Analysis</h1>
+<p class="subtitle">pulse_db &middot; 30 tables &middot; MySQL 8 &middot; InnoDB</p>
+
+<!-- Summary Stats -->
+<div class="grid">
+  <div class="card">
+    <div class="card-title">Overview</div>
+    <div class="stat-row"><span class="stat-label">Total Tables</span><span class="stat-value">30</span></div>
+    <div class="stat-row"><span class="stat-label">Foreign Keys</span><span class="stat-value">28</span></div>
+    <div class="stat-row"><span class="stat-label">Central Entity</span><span class="stat-value" style="color:var(--accent)">tiktok_user_insights</span></div>
+    <div class="stat-row"><span class="stat-label">Largest Table</span><span class="stat-value" style="color:var(--warn)">media_classifications (~1.5M)</span></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Table Clusters</div>
+    <div class="stat-row"><span class="stat-label">User & Scoring</span><span class="stat-value">10</span></div>
+    <div class="stat-row"><span class="stat-label">Video Classification Pipeline</span><span class="stat-value">8</span></div>
+    <div class="stat-row"><span class="stat-label">Music / Sounds</span><span class="stat-value">6</span></div>
+    <div class="stat-row"><span class="stat-label">Reference / Config</span><span class="stat-value">6</span></div>
+  </div>
+</div>
+
+<!-- Data Flow -->
+<div class="section-title">Data Flow: Video Classification Pipeline</div>
+<p class="section-desc">How a TikTok video moves through the system from ingestion to searchable classification.</p>
+
+<div class="flow-container">
+  <div class="flow">
+    <div class="flow-node">
+      <div class="flow-node-name">tiktok_user_insights</div>
+      <div class="flow-node-desc">Creator profile<br>pulse_score ≥ 0.4</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <div class="flow-node-name">tiktok_media_insights</div>
+      <div class="flow-node-desc">Up to 15 videos<br>per creator</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <div class="flow-node-name">batch_classification_items</div>
+      <div class="flow-node-desc">Queue table<br>pending → in_batch</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <div class="flow-node-name">batch_classification_jobs</div>
+      <div class="flow-node-desc">Batch of 100<br>→ Vertex AI</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <div class="flow-node-name">media_classifications</div>
+      <div class="flow-node-desc">Per-video result<br>categories, genres</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <div class="flow-node-name">batch_user_classification_items</div>
+      <div class="flow-node-desc">Queue when<br>≥9 videos done</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node">
+      <div class="flow-node-name">profile_description_classifications</div>
+      <div class="flow-node-desc">User-level rollup<br>top 3 of each</div>
+    </div>
+  </div>
+</div>
+
+<!-- Cluster 1: User & Scoring -->
+<div class="cluster-header">Cluster 1: User Profile & Scoring</div>
+<p class="section-desc">Central hub is <code style="color:var(--accent)">tiktok_user_insights</code> — every scoring and metric table FKs back to it. This is a classic star schema with the user as the fact table.</p>
+
+<div class="table-group">
+  <div class="table-card">
+    <div class="table-name">tiktok_user_insights</div>
+    <div class="table-purpose">Core user table. TikTok handle, followers, bio. Central FK target for almost everything.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: id (uuid)</span>
+      <span class="badge badge-fk">0 FKs out</span>
+      <span class="badge badge-rows">~85K+ users</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">pulse_score</div>
+    <div class="table-purpose">Composite quality score. Drives video classification eligibility (≥0.4 threshold).</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: tiktok_user_insights_id</span>
+      <span class="badge badge-fk">FK → user_insights</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">engagement_score</div>
+    <div class="table-purpose">Engagement quality rating with profile summary.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: tiktok_user_insights_id</span>
+      <span class="badge badge-fk">FK → user_insights</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">engagement_metrics</div>
+    <div class="table-purpose">Detailed stats: avg views, likes, comments, saves, shares, engagement rate, quantiles.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: tiktok_user_insights_id</span>
+      <span class="badge badge-fk">FK → user_insights</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">breakout_score</div>
+    <div class="table-purpose">Viral potential. Probability tiers from 1K to 100M views.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: tiktok_user_insights_id</span>
+      <span class="badge badge-fk">FK → user_insights</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">consistency_score</div>
+    <div class="table-purpose">Posting consistency + relative trend + velocity metrics.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: tiktok_user_insights_id</span>
+      <span class="badge badge-fk">FK → user_insights</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">visibility_rate</div>
+    <div class="table-purpose">How visible/discoverable a creator's content is.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: tiktok_user_insights_id</span>
+      <span class="badge badge-fk">FK → user_insights</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">expected_views</div>
+    <div class="table-purpose">Predicted view count for future posts.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: tiktok_user_insights_id</span>
+      <span class="badge badge-fk">FK → user_insights</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">tiktok_post_pricing</div>
+    <div class="table-purpose">Calculated price per sponsored post.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: tiktok_user_insights_id</span>
+      <span class="badge badge-fk">FK → user_insights</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">pulse_user_status</div>
+    <div class="table-purpose">Ingestion state machine. Tracks processing status & display eligibility.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: tiktok_user_insights_id</span>
+      <span class="badge badge-fk">FK → user_insights, status_type</span>
+      <span class="badge badge-status">status machine</span>
+    </div>
+  </div>
+</div>
+
+<!-- Cluster 2: Classification Pipeline -->
+<div class="cluster-header">Cluster 2: Video Classification Pipeline</div>
+<p class="section-desc">Batch processing pipeline. Videos are queued, batched in groups of 100, sent to Gemini via Vertex AI, results stored and rolled up to user profiles.</p>
+
+<div class="table-group">
+  <div class="table-card">
+    <div class="table-name">batch_classification_items</div>
+    <div class="table-purpose">Video queue. Each row = one video. Status: pending → in_batch → classified/failed/blocked.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: id</span>
+      <span class="badge badge-fk">FK → batch_classification_jobs</span>
+      <span class="badge badge-rows">~284K items</span>
+      <span class="badge badge-status">state machine</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">batch_classification_jobs</div>
+    <div class="table-purpose">Tracks batches of ~100 videos submitted to Vertex AI. Status: preparing → submitted → completed.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: id (uuid)</span>
+      <span class="badge badge-status">state machine</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">media_classifications</div>
+    <div class="table-purpose">Per-video classification output. Categories, styles, genres (as JSON ID arrays), description, Qdrant vector_id.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: id</span>
+      <span class="badge badge-rows">~1.56M rows</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">profile_description_classifications</div>
+    <div class="table-purpose">User-level rollup. Top 3 categories, styles, genres. Created when user hits ≥9 classified videos.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: tiktok_user_insights_id</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">batch_user_classification_items</div>
+    <div class="table-purpose">Queue for user-level classification (Stage 2). Populated when video count ≥ 9.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: id</span>
+      <span class="badge badge-fk">FK → batch_user_classification_jobs</span>
+      <span class="badge badge-rows">~43K items</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">batch_user_classification_jobs</div>
+    <div class="table-purpose">Tracks user-level batch jobs (Stage 2 equivalent of batch_classification_jobs).</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: id (uuid)</span>
+      <span class="badge badge-status">state machine</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">batch_downstream_items</div>
+    <div class="table-purpose">Queue for re-processing users who already have a profile classification.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: id</span>
+      <span class="badge badge-rows">~124 items</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">influencer_classifications</div>
+    <div class="table-purpose">LLM-based suitability assessment. recommend, is_celebrity, content_type, gender, country, confidence.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: tiktok_user_insights_id</span>
+      <span class="badge badge-fk">FK → user_insights</span>
+    </div>
+  </div>
+</div>
+
+<!-- Cluster 3: Music / Sounds -->
+<div class="cluster-header">Cluster 3: Music & Sounds</div>
+<p class="section-desc">Sound → Song → Genre chain. Connects TikTok sounds to Spotify songs via playlists, with usage rankings per creator.</p>
+
+<div class="table-group">
+  <div class="table-card">
+    <div class="table-name">tiktok_sounds</div>
+    <div class="table-purpose">TikTok sound entries. Links to songs, source type, processing state.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: sound_id</span>
+      <span class="badge badge-fk">FK → tiktok_songs, sound_source_type</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">tiktok_songs</div>
+    <div class="table-purpose">Song metadata. Name, artist, Spotify ID, genre FK, trending flag.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: id (uuid)</span>
+      <span class="badge badge-fk">FK → genres</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">sound_insights</div>
+    <div class="table-purpose">Sound metrics: UGC count, duration, is_original flag.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: sound_id</span>
+      <span class="badge badge-fk">FK → tiktok_sounds</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">tiktok_sound_user_ranking</div>
+    <div class="table-purpose">Which creators rank highest for each sound. Three-way junction table.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: (sound_id, ranking)</span>
+      <span class="badge badge-fk">FK → sounds, users, media</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">spotify_playlists</div>
+    <div class="table-purpose">Tracked Spotify playlists with processing state.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: id</span>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="table-name">playlist_songs</div>
+    <div class="table-purpose">Junction: Spotify playlist ↔ TikTok song mapping.</div>
+    <div class="table-meta">
+      <span class="badge badge-pk">PK: id (uuid)</span>
+      <span class="badge badge-fk">FK → spotify_playlists, tiktok_songs</span>
+    </div>
+  </div>
+</div>
+
+<!-- FK Table -->
+<div class="section-title">All Foreign Key Relationships</div>
+<div class="card full-width" style="overflow-x:auto;">
+<table class="relationship-table">
+  <thead>
+    <tr><th>Child Table</th><th></th><th>Parent Table</th><th>On Delete</th><th>On Update</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>pulse_score</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>engagement_score</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>engagement_metrics</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>breakout_score</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>consistency_score</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>visibility_rate</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>expected_views</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>tiktok_post_pricing</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>pulse_user_status</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>pulse_user_status</td><td class="fk-arrow">→</td><td>pulse_user_status_type</td><td style="color:var(--danger)">RESTRICT</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>influencer_classifications</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>audience_report_history</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>tiktok_user_emails</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>tiktok_audiences_insights</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>tiktok_audiences_insights</td><td class="fk-arrow">→</td><td>tiktok_media_insights (×3)</td><td class="set-null">SET NULL</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>tiktok_media_insights</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>tiktok_media_insights</td><td class="fk-arrow">→</td><td>tiktok_sounds</td><td class="set-null">SET NULL</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>batch_classification_items</td><td class="fk-arrow">→</td><td>batch_classification_jobs</td><td class="set-null">SET NULL</td><td style="color:var(--text-dim)">—</td></tr>
+    <tr><td>batch_user_classification_items</td><td class="fk-arrow">→</td><td>batch_user_classification_jobs</td><td class="set-null">SET NULL</td><td style="color:var(--text-dim)">—</td></tr>
+    <tr><td>tiktok_sounds</td><td class="fk-arrow">→</td><td>tiktok_songs</td><td class="set-null">SET NULL</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>tiktok_sounds</td><td class="fk-arrow">→</td><td>sound_source_type</td><td style="color:var(--text-dim)">—</td><td style="color:var(--text-dim)">—</td></tr>
+    <tr><td>tiktok_songs</td><td class="fk-arrow">→</td><td>genres</td><td style="color:var(--danger)">RESTRICT</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>sound_insights</td><td class="fk-arrow">→</td><td>tiktok_sounds</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>tiktok_sound_user_ranking</td><td class="fk-arrow">→</td><td>tiktok_sounds</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>tiktok_sound_user_ranking</td><td class="fk-arrow">→</td><td>tiktok_user_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>tiktok_sound_user_ranking</td><td class="fk-arrow">→</td><td>tiktok_media_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>tiktok_stickers</td><td class="fk-arrow">→</td><td>tiktok_media_insights</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>playlist_songs</td><td class="fk-arrow">→</td><td>spotify_playlists</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+    <tr><td>playlist_songs</td><td class="fk-arrow">→</td><td>tiktok_songs</td><td class="cascade">CASCADE</td><td class="cascade">CASCADE</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- Issues -->
+<div class="section-title">Schema Observations & Issues</div>
+<div class="issues-grid">
+  <div class="issue-card">
+    <div class="issue-title">Missing FKs on media_classifications</div>
+    <div class="issue-desc">Has <code>media_id</code> but no FK to <code>tiktok_media_insights</code>. The backup table has it, the main one doesn't. Also no FK to <code>content_classifications_type</code> or <code>content_style_type</code> for JSON ID arrays — validation is purely application-side.</div>
+  </div>
+  <div class="issue-card">
+    <div class="issue-title">profile_description_classifications has no FKs</div>
+    <div class="issue-desc">PK is <code>tiktok_user_insights_id</code> but there's no FK constraint. Has <code>genre_id_1/2/3</code> columns but no FK to <code>genres</code> table. The backup version has all FKs — the main table lost them during migration.</div>
+  </div>
+  <div class="issue-card">
+    <div class="issue-title">JSON columns for IDs</div>
+    <div class="issue-desc"><code>media_classifications</code> stores category/style/genre IDs as JSON arrays instead of junction tables. This prevents join-based queries and makes referential integrity impossible at the DB level.</div>
+  </div>
+  <div class="issue-card">
+    <div class="issue-title">Cascade risk on user delete</div>
+    <div class="issue-desc">Deleting one <code>tiktok_user_insights</code> row cascades to ~15 dependent tables. A single accidental delete could wipe scoring data, classifications, media, audience insights, pricing, and emails simultaneously.</div>
+  </div>
+  <div class="issue-card">
+    <div class="issue-title">Backup tables are drift risk</div>
+    <div class="issue-desc"><code>media_classifications_backup</code> is missing the <code>genre_ids</code> column present in the main table. <code>profile_description_classifications_backup</code> is missing <code>genre_id_1/2/3</code>. These backups are structurally stale.</div>
+  </div>
+  <div class="issue-card">
+    <div class="issue-title">batch_downstream_items only ~124 rows</div>
+    <div class="issue-desc">Very low usage suggests the re-classification path is barely exercised. Compared to 43K user classification items and 284K video items, this confirms the "stale data" problem — creators are rarely re-processed.</div>
+  </div>
+</div>
+
+</body>
+</html>

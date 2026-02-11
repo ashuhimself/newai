@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulse DB — Data Flow Analysis</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3a;
+    --text: #e0e0e8;
+    --text-dim: #8888a0;
+    --accent: #6c5ce7;
+    --accent2: #00cec9;
+    --warn: #fdcb6e;
+    --danger: #e17055;
+    --success: #00b894;
+    --blue: #74b9ff;
+    --pink: #fd79a8;
+    --orange: #e17055;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding: 32px; }
+
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .subtitle { color: var(--text-dim); margin-bottom: 32px; font-size: 14px; }
+
+  .section-title { font-size: 20px; font-weight: 700; margin: 40px 0 8px; }
+  .section-desc { color: var(--text-dim); font-size: 14px; margin-bottom: 20px; line-height: 1.7; }
+
+  .flow-section { margin-bottom: 48px; }
+
+  /* Entry point cards */
+  .entry-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-bottom: 32px; }
+
+  .entry-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    border-top: 3px solid var(--accent);
+    transition: all 0.2s;
+  }
+  .entry-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(108, 92, 231, 0.15); }
+  .entry-card.entry-music { border-top-color: var(--pink); }
+  .entry-card.entry-search { border-top-color: var(--warn); }
+
+  .entry-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .entry-card.entry-music .entry-label { color: var(--pink); }
+  .entry-card.entry-search .entry-label { color: var(--warn); }
+
+  .entry-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+  .entry-desc { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+  .entry-table {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent2);
+    margin-top: 10px;
+    background: var(--surface2);
+    padding: 6px 10px;
+    border-radius: 6px;
+    display: inline-block;
+  }
+
+  /* Flow diagrams */
+  .flow-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+    overflow-x: auto;
+  }
+  .flow-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .flow-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot-user { background: var(--accent); }
+  .dot-video { background: var(--accent2); }
+  .dot-music { background: var(--pink); }
+  .dot-search { background: var(--warn); }
+  .dot-scoring { background: var(--success); }
+
+  .flow-steps {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    min-width: max-content;
+    padding: 8px 0;
+  }
+
+  .flow-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 140px;
+    flex-shrink: 0;
+  }
+
+  .step-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    text-align: center;
+    width: 100%;
+    transition: all 0.2s;
+  }
+  .step-box:hover { border-color: var(--accent2); }
+
+  .step-table {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+  .step-action { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+  .step-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    color: var(--success);
+    margin-top: 4px;
+    background: rgba(0, 184, 148, 0.1);
+    padding: 2px 6px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+
+  .flow-arrow-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0 6px;
+    flex-shrink: 0;
+  }
+  .flow-arrow { color: var(--accent2); font-size: 18px; }
+  .arrow-label { font-size: 9px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+
+  /* Branch indicator */
+  .branch-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+
+  .branch-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .branch-row:last-child { margin-bottom: 0; }
+
+  .branch-condition {
+    background: rgba(253, 203, 110, 0.1);
+    border: 1px solid rgba(253, 203, 110, 0.3);
+    border-radius: 8px;
+    padding: 10px 14px;
+    min-width: 200px;
+    flex-shrink: 0;
+  }
+  .branch-if {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--warn);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .branch-text { font-size: 12px; color: var(--text); }
+
+  .branch-then {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .branch-target {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent2);
+  }
+  .branch-arrow { color: var(--accent2); font-size: 16px; }
+
+  /* Summary table */
+  .summary-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-top: 16px;
+  }
+  .summary-table th {
+    text-align: left;
+    padding: 10px 12px;
+    background: var(--surface2);
+    color: var(--accent2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .summary-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .summary-table tr:hover td { background: rgba(108, 92, 231, 0.05); }
+  .mono { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--accent); }
+  .dim { color: var(--text-dim); font-size: 12px; }
+
+  .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: inline-block;
+    margin: 2px 4px 2px 0;
+  }
+  .tag-write { background: rgba(0, 206, 201, 0.15); color: var(--accent2); }
+  .tag-read { background: rgba(116, 185, 255, 0.15); color: var(--blue); }
+  .tag-entry { background: rgba(108, 92, 231, 0.2); color: var(--accent); }
+  .tag-sink { background: rgba(253, 203, 110, 0.15); color: var(--warn); }
+</style>
+</head>
+<body>
+
+<h1>Pulse DB — Data Flow Analysis</h1>
+<p class="subtitle">3 entry points &middot; 5 distinct flows &middot; 30 tables</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="section-title">Entry Points</div>
+<p class="section-desc">There are 3 ways data enters the system. Everything starts from one of these.</p>
+
+<div class="entry-grid">
+  <div class="entry-card">
+    <div class="entry-label">Entry Point 1 — Primary</div>
+    <div class="entry-title">TikTok User Ingestion</div>
+    <div class="entry-desc">New TikTok creators are discovered and their profiles are scraped. This is the root of all downstream flows — scoring, classification, pricing all depend on this.</div>
+    <div class="entry-table">→ tiktok_user_insights</div>
+  </div>
+  <div class="entry-card entry-music">
+    <div class="entry-label">Entry Point 2 — Music</div>
+    <div class="entry-title">Spotify Playlist Sync</div>
+    <div class="entry-desc">Spotify playlists are tracked and synced. Songs are matched to TikTok sounds, creating the music graph used for campaign matching.</div>
+    <div class="entry-table">→ spotify_playlists → tiktok_songs → tiktok_sounds</div>
+  </div>
+  <div class="entry-card entry-search">
+    <div class="entry-label">Entry Point 3 — Consumer</div>
+    <div class="entry-title">AI Search Queries</div>
+    <div class="entry-desc">End users search for creators via the AI agent (pulse-one-chat). Queries and results are logged for feedback loops.</div>
+    <div class="entry-table">→ ai_search_results</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="section-title">Flow 1: User Ingestion → Scoring</div>
+<p class="section-desc">When a new creator is discovered, their profile is stored, then multiple scoring jobs run independently to compute quality metrics. All scoring tables are 1:1 with the user. This flow determines whether a user qualifies for video classification (pulse_score ≥ 0.4).</p>
+
+<div class="flow-container">
+  <div class="flow-title"><span class="flow-dot dot-user"></span> USER INGESTION + SCORING</div>
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">tiktok_user_insights</div>
+        <div class="step-action">Profile scraped<br>handle, followers, bio</div>
+        <div class="step-status">ENTRY POINT</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">parallel</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">tiktok_media_insights</div>
+        <div class="step-action">Scrape recent videos<br>likes, views, shares</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">compute</div></div>
+    <div class="flow-step">
+      <div class="step-box" style="border-color: var(--success);">
+        <div class="step-table" style="color:var(--success)">6 scoring tables</div>
+        <div class="step-action">
+          pulse_score<br>
+          engagement_score<br>
+          engagement_metrics<br>
+          breakout_score<br>
+          consistency_score<br>
+          visibility_rate
+        </div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">derived</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">expected_views</div>
+        <div class="step-action">Predicted views<br>for pricing model</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">price</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">tiktok_post_pricing</div>
+        <div class="step-action">$ per post</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">gate</div></div>
+    <div class="flow-step">
+      <div class="step-box" style="border-color: var(--warn);">
+        <div class="step-table" style="color:var(--warn)">pulse_user_status</div>
+        <div class="step-action">meets_display_criteria<br>= pulse ≥ 0.4 + pricing</div>
+        <div class="step-status">GATE TO FLOW 2</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="section-title">Flow 2: Video Classification Pipeline</div>
+<p class="section-desc">Only users with pulse_score ≥ 0.4 enter this flow. Their videos are downloaded, batched in groups of 100, sent to Gemini via Vertex AI, and results are stored. This is the most complex and expensive flow.</p>
+
+<div class="flow-container">
+  <div class="flow-title"><span class="flow-dot dot-video"></span> STAGE 1: VIDEO-LEVEL CLASSIFICATION</div>
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="step-box" style="border-color: var(--warn);">
+        <div class="step-table">pulse_score</div>
+        <div class="step-action">Filter: score ≥ 0.4<br>Select eligible creators</div>
+        <div class="step-status">TRIGGER</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">select 15</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">tiktok_media_insights</div>
+        <div class="step-action">Pick 15 latest videos<br>per creator</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">enqueue</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">batch_classification_items</div>
+        <div class="step-action">1 row per video<br>status = pending</div>
+        <div class="step-status">pending → in_batch</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">batch 100</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">batch_classification_jobs</div>
+        <div class="step-action">Claims 100 items<br>→ Vertex AI batch</div>
+        <div class="step-status">preparing → submitted → succeeded</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">results</div></div>
+    <div class="flow-step">
+      <div class="step-box" style="border-color: var(--accent2);">
+        <div class="step-table" style="color:var(--accent2)">media_classifications</div>
+        <div class="step-action">Per-video output<br>categories, styles, genres<br>+ Qdrant vector_id</div>
+        <div class="step-status">SINK (1.56M rows)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Branch decision -->
+<div class="branch-container">
+  <div class="flow-title"><span class="flow-dot dot-video"></span> STAGE 2 BRANCHING — after video classification</div>
+
+  <div class="branch-row">
+    <div class="branch-condition">
+      <div class="branch-if">If</div>
+      <div class="branch-text">classified_count ≥ 9 <strong>AND</strong> no profile yet</div>
+    </div>
+    <div class="branch-then">
+      <span class="branch-arrow">→</span>
+      <div class="branch-target">batch_user_classification_items</div>
+      <span class="branch-arrow">→</span>
+      <div class="branch-target">batch_user_classification_jobs</div>
+      <span class="branch-arrow">→</span>
+      <div class="branch-target" style="color:var(--accent2)">profile_description_classifications</div>
+    </div>
+  </div>
+
+  <div class="branch-row">
+    <div class="branch-condition">
+      <div class="branch-if">Else if</div>
+      <div class="branch-text">classified_count ≥ 9 <strong>AND</strong> profile already exists</div>
+    </div>
+    <div class="branch-then">
+      <span class="branch-arrow">→</span>
+      <div class="branch-target">batch_downstream_items</div>
+      <span class="branch-arrow">→</span>
+      <div class="branch-target" style="color:var(--text-dim)">re-process (rarely used, ~124 rows)</div>
+    </div>
+  </div>
+
+  <div class="branch-row">
+    <div class="branch-condition">
+      <div class="branch-if">If blocked</div>
+      <div class="branch-text">Gemini safety filter triggered</div>
+    </div>
+    <div class="branch-then">
+      <span class="branch-arrow">→</span>
+      <div class="branch-target">tiktok_media_insights.is_classification_blocked = 1</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="section-title">Flow 3: Influencer Suitability Classification</div>
+<p class="section-desc">Separate from video classification. Uses profile data + web search to determine if a creator is suitable for music campaigns. This is the LLM prompt flow we discussed earlier.</p>
+
+<div class="flow-container">
+  <div class="flow-title"><span class="flow-dot dot-scoring"></span> INFLUENCER CLASSIFICATION</div>
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">tiktok_user_insights</div>
+        <div class="step-action">Handle, followers, bio</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">+</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">profile_description_classifications</div>
+        <div class="step-action">Categories, styles<br>profile description</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">LLM prompt</div></div>
+    <div class="flow-step">
+      <div class="step-box" style="border-color: var(--pink);">
+        <div class="step-table" style="color:var(--pink)">Gemini / LLM</div>
+        <div class="step-action">Suitability analysis<br>recommend? celebrity?<br>gender? content_type?</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div></div>
+    <div class="flow-step">
+      <div class="step-box" style="border-color: var(--accent2);">
+        <div class="step-table" style="color:var(--accent2)">influencer_classifications</div>
+        <div class="step-action">recommend, confidence<br>is_celebrity, gender<br>country, languages</div>
+        <div class="step-status">SINK</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="section-title">Flow 4: Music Graph</div>
+<p class="section-desc">Independent entry point. Spotify playlists are synced, songs are matched to TikTok sounds, and creator-sound rankings are built. This powers campaign matching ("find creators who used this genre").</p>
+
+<div class="flow-container">
+  <div class="flow-title"><span class="flow-dot dot-music"></span> MUSIC INGESTION</div>
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="step-box" style="border-color: var(--pink);">
+        <div class="step-table" style="color:var(--pink)">spotify_playlists</div>
+        <div class="step-action">Track playlists<br>is_processed flag</div>
+        <div class="step-status">ENTRY POINT</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">extract</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">tiktok_songs</div>
+        <div class="step-action">Song metadata<br>artist, spotify_id</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">link</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">playlist_songs</div>
+        <div class="step-action">Junction table<br>playlist ↔ song</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="flow-container">
+  <div class="flow-title"><span class="flow-dot dot-music"></span> SOUND → SONG → GENRE CHAIN</div>
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">tiktok_media_insights</div>
+        <div class="step-action">Video has sound_id</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">FK</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">tiktok_sounds</div>
+        <div class="step-action">TikTok sound<br>→ links to song</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">FK</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">tiktok_songs</div>
+        <div class="step-action">Song name, artist<br>spotify_id</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">FK</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">genres</div>
+        <div class="step-action">Genre lookup<br>29 genres</div>
+      </div>
+    </div>
+  </div>
+  <br>
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">tiktok_sounds</div>
+        <div class="step-action">Sound usage data</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">sound_insights</div>
+        <div class="step-action">UGCs, duration<br>is_original</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">&nbsp;</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">tiktok_sound_user_ranking</div>
+        <div class="step-action">Which creators rank<br>highest per sound</div>
+        <div class="step-status">3-WAY JOIN</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="section-title">Flow 5: Search & Consumption</div>
+<p class="section-desc">The end-user facing flow. AI agent queries Qdrant (via vector_id from media_classifications) + MySQL filters to find matching creators for campaigns.</p>
+
+<div class="flow-container">
+  <div class="flow-title"><span class="flow-dot dot-search"></span> AI SEARCH QUERY</div>
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="step-box" style="border-color: var(--warn);">
+        <div class="step-table" style="color:var(--warn)">User Query</div>
+        <div class="step-action">"Find dance creators<br>for reggaeton campaign"</div>
+        <div class="step-status">ENTRY POINT</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">semantic</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">Qdrant (pulse-videos-v2)</div>
+        <div class="step-action">Vector search on<br>video descriptions</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">filter</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">media_classifications</div>
+        <div class="step-action">Genre filter<br>Content type filter<br>Gender filter</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">enrich</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">influencer_classifications</div>
+        <div class="step-action">recommend = true?<br>is_celebrity = false?</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">score</div></div>
+    <div class="flow-step">
+      <div class="step-box">
+        <div class="step-table">LLM Batch Scoring</div>
+        <div class="step-action">Sonnet scores<br>top 3 descriptions<br>per creator</div>
+      </div>
+    </div>
+    <div class="flow-arrow-container"><div class="flow-arrow">→</div><div class="arrow-label">log</div></div>
+    <div class="flow-step">
+      <div class="step-box" style="border-color: var(--accent2);">
+        <div class="step-table" style="color:var(--accent2)">ai_search_results</div>
+        <div class="step-action">Store query + results<br>liked feedback</div>
+        <div class="step-status">SINK</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="section-title">Table Role Summary</div>
+
+<div class="flow-container" style="overflow-x:auto;">
+<table class="summary-table">
+  <thead>
+    <tr><th>Table</th><th>Role</th><th>Written By</th><th>Read By</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="mono">tiktok_user_insights</td>
+      <td><span class="tag tag-entry">ENTRY</span> Root entity</td>
+      <td class="dim">Scraper / ingestion job</td>
+      <td class="dim">Everything</td>
+    </tr>
+    <tr>
+      <td class="mono">tiktok_media_insights</td>
+      <td><span class="tag tag-write">HUB</span> Video metadata</td>
+      <td class="dim">Scraper</td>
+      <td class="dim">Classification pipeline, scoring, audiences</td>
+    </tr>
+    <tr>
+      <td class="mono">pulse_score</td>
+      <td><span class="tag tag-write">GATE</span> Quality threshold</td>
+      <td class="dim">Scoring job</td>
+      <td class="dim">Classification pipeline trigger, display criteria</td>
+    </tr>
+    <tr>
+      <td class="mono">batch_classification_items</td>
+      <td><span class="tag tag-write">QUEUE</span> Video work items</td>
+      <td class="dim">Download handler (TS)</td>
+      <td class="dim">Batch submit job</td>
+    </tr>
+    <tr>
+      <td class="mono">batch_classification_jobs</td>
+      <td><span class="tag tag-write">QUEUE</span> Batch tracker</td>
+      <td class="dim">Batch submit job</td>
+      <td class="dim">Results poller job</td>
+    </tr>
+    <tr>
+      <td class="mono">media_classifications</td>
+      <td><span class="tag tag-sink">SINK</span> Video classification output</td>
+      <td class="dim">Classifier (Python)</td>
+      <td class="dim">Search agent, user rollup, LLM scoring</td>
+    </tr>
+    <tr>
+      <td class="mono">profile_description_classifications</td>
+      <td><span class="tag tag-sink">SINK</span> User rollup</td>
+      <td class="dim">User classification batch</td>
+      <td class="dim">Influencer classification prompt, search</td>
+    </tr>
+    <tr>
+      <td class="mono">influencer_classifications</td>
+      <td><span class="tag tag-sink">SINK</span> Suitability verdict</td>
+      <td class="dim">LLM classification job</td>
+      <td class="dim">Search agent post-filter</td>
+    </tr>
+    <tr>
+      <td class="mono">tiktok_sounds</td>
+      <td><span class="tag tag-read">LINK</span> Sound ↔ Song bridge</td>
+      <td class="dim">Sound ingestion</td>
+      <td class="dim">Media insights FK, genre chain</td>
+    </tr>
+    <tr>
+      <td class="mono">tiktok_songs</td>
+      <td><span class="tag tag-read">LINK</span> Song metadata</td>
+      <td class="dim">Spotify sync</td>
+      <td class="dim">Genre lookup, playlist mapping</td>
+    </tr>
+    <tr>
+      <td class="mono">ai_search_results</td>
+      <td><span class="tag tag-sink">SINK</span> Query log</td>
+      <td class="dim">AI search agent</td>
+      <td class="dim">Analytics / feedback loop</td>
+    </tr>
+    <tr>
+      <td class="mono">pulse_user_status</td>
+      <td><span class="tag tag-write">STATE</span> Ingestion state machine</td>
+      <td class="dim">Ingestion orchestrator</td>
+      <td class="dim">Display eligibility queries</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+</body>
+</html>
